@@ -1,0 +1,59 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.eggs
+*.egg-info
+.pytest_cache
+.mypy_cache
+.coverage
+htmlcov
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Virtual environments
+venv
+env
+.env
+
+# Jupyter
+.ipynb_checkpoints
+
+# Data (except samples)
+data/*.csv
+!data/sample_events.json
+
+# Models (will be mounted as volume)
+models/saved/*
+
+# Logs
+logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs
+*.md
+!README.md
+
+# Test files
+tests
+test_*.py
+
+# Development
+*.bak
+*.tmp

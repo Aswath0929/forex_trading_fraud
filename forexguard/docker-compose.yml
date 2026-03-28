@@ -1,0 +1,81 @@
+# Docker Compose for ForexGuard
+# Use for local development and testing
+
+version: '3.8'
+
+services:
+  # Main API service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - kafka
+    networks:
+      - forexguard-net
+
+  # Kafka for streaming (optional)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    networks:
+      - forexguard-net
+    profiles:
+      - kafka
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    depends_on:
+      - zookeeper
+    networks:
+      - forexguard-net
+    profiles:
+      - kafka
+
+  # Stream processor (optional)
+  processor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -c "from streaming.processor import StreamProcessor; import asyncio; asyncio.run(StreamProcessor().start_kafka_consumer())"
+    environment:
+      - KAFKA_BOOTSTRAP=kafka:29092
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+      - kafka
+    networks:
+      - forexguard-net
+    profiles:
+      - kafka
+
+networks:
+  forexguard-net:
+    driver: bridge
+
+volumes:
+  models:
+  data:
