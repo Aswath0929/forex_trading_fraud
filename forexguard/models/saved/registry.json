@@ -1,0 +1,155 @@
+{
+  "models": {
+    "isolation_forest/default": {
+      "versions": [
+        {
+          "version": "v_20260329_035821",
+          "path": "models\\saved\\isolation_forest\\default\\v_20260329_035821.joblib",
+          "created_at": "2026-03-29T03:58:21.871477",
+          "description": "Trained on 50000 events with 5% anomaly rate",
+          "metrics": {
+            "precision": 0.398,
+            "recall": 0.398,
+            "f1_score": 0.398,
+            "accuracy": 0.9398,
+            "auc_approx": 0.6893,
+            "true_positives": 995,
+            "false_positives": 1505,
+            "true_negatives": 45995,
+            "false_negatives": 1505
+          }
+        },
+        {
+          "version": "v_20260328_230509",
+          "path": "models\\saved\\isolation_forest\\default\\v_20260328_230509.joblib",
+          "created_at": "2026-03-28T23:05:09.284650+00:00",
+          "description": "Trained on 50000 events with 5% anomaly rate",
+          "metrics": {
+            "precision": 0.398,
+            "recall": 0.398,
+            "f1_score": 0.398,
+            "accuracy": 0.9398,
+            "auc_approx": 0.6893,
+            "true_positives": 995,
+            "false_positives": 1505,
+            "true_negatives": 45995,
+            "false_negatives": 1505
+          }
+        },
+        {
+          "version": "v_20260329_084349",
+          "path": "models\\saved\\isolation_forest\\default\\v_20260329_084349.joblib",
+          "created_at": "2026-03-29T08:43:49.991056+00:00",
+          "description": "Trained on 50000 events with 5% anomaly rate",
+          "metrics": {
+            "precision": 0.0819,
+            "recall": 0.3553,
+            "f1_score": 0.1332,
+            "accuracy": 0.9466,
+            "auc_approx": 0.647,
+            "true_positives": 205,
+            "false_positives": 2297,
+            "true_negatives": 47151,
+            "false_negatives": 372
+          }
+        },
+        {
+          "version": "v_20260329_090123",
+          "path": "models\\saved\\isolation_forest\\default\\v_20260329_090123.joblib",
+          "created_at": "2026-03-29T09:01:23.964600+00:00",
+          "description": "Trained on 50000 events with 5% anomaly rate",
+          "metrics": {
+            "precision": 0.2338,
+            "recall": 0.3726,
+            "f1_score": 0.2873,
+            "accuracy": 0.942,
+            "auc_approx": 0.6416,
+            "true_positives": 585,
+            "false_positives": 1917,
+            "true_negatives": 46538,
+            "false_negatives": 985
+          }
+        }
+      ]
+    },
+    "lstm_autoencoder/default": {
+      "versions": [
+        {
+          "version": "v_20260329_040323",
+          "path": "models\\saved\\lstm_autoencoder\\default\\v_20260329_040323.pt",
+          "created_at": "2026-03-29T04:03:23.271618",
+          "description": "Trained on 50000 events with 30 epochs",
+          "metrics": {
+            "precision": 0.1128,
+            "recall": 0.4396,
+            "f1_score": 0.1795,
+            "accuracy": 0.7991,
+            "auc_approx": 0.6716,
+            "true_positives": 1099,
+            "false_positives": 8644,
+            "true_negatives": 38856,
+            "false_negatives": 1401
+          }
+        },
+        {
+          "version": "v_20260328_231156",
+          "path": "models\\saved\\lstm_autoencoder\\default\\v_20260328_231156.pt",
+          "created_at": "2026-03-28T23:11:56.357756+00:00",
+          "description": "Trained on 50000 events with 30 epochs",
+          "metrics": {
+            "precision": 0.1158,
+            "recall": 0.456,
+            "f1_score": 0.1847,
+            "accuracy": 0.7987,
+            "auc_approx": 0.678,
+            "true_positives": 1140,
+            "false_positives": 8705,
+            "true_negatives": 38795,
+            "false_negatives": 1360
+          }
+        },
+        {
+          "version": "v_20260329_084913",
+          "path": "models\\saved\\lstm_autoencoder\\default\\v_20260329_084913.pt",
+          "created_at": "2026-03-29T08:49:13.887852+00:00",
+          "description": "Trained on 50000 events with 30 epochs",
+          "metrics": {
+            "precision": 0.0524,
+            "recall": 0.3917,
+            "f1_score": 0.0924,
+            "accuracy": 0.9113,
+            "auc_approx": 0.6701,
+            "true_positives": 226,
+            "false_positives": 4088,
+            "true_negatives": 45360,
+            "false_negatives": 351
+          }
+        },
+        {
+          "version": "v_20260329_090812",
+          "path": "models\\saved\\lstm_autoencoder\\default\\v_20260329_090812.pt",
+          "created_at": "2026-03-29T09:08:12.645535+00:00",
+          "description": "Trained on 50000 events with 30 epochs",
+          "metrics": {
+            "precision": 0.0894,
+            "recall": 0.421,
+            "f1_score": 0.1475,
+            "accuracy": 0.8473,
+            "auc_approx": 0.6692,
+            "true_positives": 661,
+            "false_positives": 6730,
+            "true_negatives": 41725,
+            "false_negatives": 909
+          }
+        }
+      ]
+    }
+  },
+  "active": {
+    "isolation_forest": {
+      "name": "default",
+      "version": "v_20260329_090123",
+      "path": "models\\saved\\isolation_forest\\default\\v_20260329_090123.joblib"
+    }
+  }
+}

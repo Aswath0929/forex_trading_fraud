@@ -4,9 +4,36 @@ Maintains sliding window of user events for real-time feature computation.
 """
 
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import pandas as pd
+
+
+def ensure_utc(dt: datetime) -> datetime:
+    """Ensure datetime is timezone-aware (UTC)."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def parse_timestamp(ts) -> datetime:
+    """Parse timestamp to timezone-aware datetime."""
+    if ts is None:
+        return datetime.now(timezone.utc)
+    if isinstance(ts, datetime):
+        return ensure_utc(ts)
+    if isinstance(ts, str):
+        parsed = pd.to_datetime(ts)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.to_pydatetime().astimezone(timezone.utc)
+    # pandas Timestamp
+    if hasattr(ts, 'to_pydatetime'):
+        dt = ts.to_pydatetime()
+        return ensure_utc(dt)
+    return datetime.now(timezone.utc)
 
 
 class RollingFeatureStore:
@@ -38,7 +65,7 @@ class RollingFeatureStore:
         """
         # Add timestamp if not present
         if "timestamp" not in event_features:
-            event_features["timestamp"] = datetime.now()
+            event_features["timestamp"] = datetime.now(timezone.utc)
 
         self.user_events[user_id].append(event_features)
 
@@ -68,14 +95,13 @@ class RollingFeatureStore:
             return []
 
         window = window_hours or self.window_hours
-        cutoff_time = datetime.now() - timedelta(hours=window)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=window)
 
         # Filter events within window
         filtered_events = []
         for event in self.user_events[user_id]:
             event_time = event.get("timestamp")
-            if isinstance(event_time, str):
-                event_time = pd.to_datetime(event_time)
+            event_time = parse_timestamp(event_time)
 
             # Include events without timestamp or within window
             if event_time is None or event_time >= cutoff_time:
@@ -109,14 +135,13 @@ class RollingFeatureStore:
 
     def cleanup_old_events(self):
         """Remove events outside the rolling window for all users."""
-        cutoff_time = datetime.now() - timedelta(hours=self.window_hours)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=self.window_hours)
 
         for user_id in list(self.user_events.keys()):
             filtered = []
             for event in self.user_events[user_id]:
                 event_time = event.get("timestamp")
-                if isinstance(event_time, str):
-                    event_time = pd.to_datetime(event_time)
+                event_time = parse_timestamp(event_time)
 
                 if event_time is None or event_time >= cutoff_time:
                     filtered.append(event)
@@ -206,3 +231,62 @@ class GlobalFeatureStore:
             return 0
 
         return (value - mean) / std
+
+
+class EntityHubStore:
+    """Tracks shared IP/device usage across users within a rolling time window.
+
+    This enables client-portal access anomalies such as:
+    - Many users logging in from the same IP (IP hub behavior)
+    - Many users using the same device fingerprint
+    """
+
+    def __init__(self, window_hours: int = 24):
+        self.window_hours = window_hours
+        # key -> {user_id: last_seen_ts}
+        self.ip_users: dict[int, dict[str, datetime]] = defaultdict(dict)
+        self.device_users: dict[int, dict[str, datetime]] = defaultdict(dict)
+
+    def _cutoff(self, now: datetime) -> datetime:
+        return ensure_utc(now) - timedelta(hours=self.window_hours)
+
+    def _cleanup_map(self, m: dict[int, dict[str, datetime]], cutoff: datetime):
+        for key in list(m.keys()):
+            users = m[key]
+            for uid, ts in list(users.items()):
+                if ensure_utc(ts) < cutoff:
+                    del users[uid]
+            if not users:
+                del m[key]
+
+    def get_shared_counts(
+        self,
+        user_id: str,
+        ip_hash: Optional[int],
+        device_hash: Optional[int],
+        now: datetime,
+    ) -> tuple[int, int]:
+        """Return (ip_shared_users, device_shared_users) excluding current user."""
+        now = ensure_utc(now)
+        cutoff = self._cutoff(now)
+        self._cleanup_map(self.ip_users, cutoff)
+        self._cleanup_map(self.device_users, cutoff)
+
+        ip_shared = 0
+        if ip_hash is not None:
+            users = self.ip_users.get(ip_hash, {})
+            ip_shared = max(0, len(users) - (1 if user_id in users else 0))
+
+        device_shared = 0
+        if device_hash is not None:
+            users = self.device_users.get(device_hash, {})
+            device_shared = max(0, len(users) - (1 if user_id in users else 0))
+
+        return ip_shared, device_shared
+
+    def update(self, user_id: str, ip_hash: Optional[int], device_hash: Optional[int], now: datetime):
+        now = ensure_utc(now)
+        if ip_hash is not None:
+            self.ip_users[ip_hash][user_id] = now
+        if device_hash is not None:
+            self.device_users[device_hash][user_id] = now

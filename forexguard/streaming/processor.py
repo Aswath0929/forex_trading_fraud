@@ -1,11 +1,17 @@
-"""
+""" 
 Stream Processor for ForexGuard
 Processes streaming events through the anomaly detection pipeline.
+
+Kafka mode:
+- Consume raw events from a Kafka topic (default: forex-events)
+- Score via the ForexGuard API (/score)
+- Publish anomaly alerts to a Kafka topic (default: forex-alerts)
 """
 
 import asyncio
 import json
-from datetime import datetime
+import os
+from datetime import datetime, timezone
 from typing import Optional, Callable, Any
 from dataclasses import dataclass, field
 from collections import deque
@@ -24,17 +30,19 @@ except ImportError:
 @dataclass
 class ProcessorConfig:
     """Configuration for stream processor."""
-    api_url: str = "http://localhost:8000"
-    batch_size: int = 10
-    batch_timeout: float = 1.0
-    max_concurrent: int = 5
-    alert_threshold: float = 0.5
+
+    # API
+    api_url: str = field(default_factory=lambda: os.getenv("API_URL", "http://localhost:8000"))
+    batch_size: int = field(default_factory=lambda: int(os.getenv("BATCH_SIZE", "10")))
+    batch_timeout: float = field(default_factory=lambda: float(os.getenv("BATCH_TIMEOUT", "1.0")))
+    max_concurrent: int = field(default_factory=lambda: int(os.getenv("MAX_CONCURRENT", "5")))
+    alert_threshold: float = field(default_factory=lambda: float(os.getenv("ALERT_THRESHOLD", "0.5")))
 
     # Kafka settings (optional)
-    kafka_bootstrap: str = "localhost:9092"
-    kafka_input_topic: str = "forex-events"
-    kafka_output_topic: str = "forex-alerts"
-    kafka_group_id: str = "forexguard-processor"
+    kafka_bootstrap: str = field(default_factory=lambda: os.getenv("KAFKA_BOOTSTRAP", "localhost:9092"))
+    kafka_input_topic: str = field(default_factory=lambda: os.getenv("KAFKA_INPUT_TOPIC", "forex-events"))
+    kafka_output_topic: str = field(default_factory=lambda: os.getenv("KAFKA_OUTPUT_TOPIC", "forex-alerts"))
+    kafka_group_id: str = field(default_factory=lambda: os.getenv("KAFKA_GROUP_ID", "forexguard-processor"))
 
 
 @dataclass
@@ -44,9 +52,12 @@ class ProcessingResult:
     user_id: str
     anomaly_score: float
     is_anomaly: bool
+    severity: Optional[str]
     explanation: str
-    processing_time_ms: float
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    model_type: Optional[str] = None
+    feature_contributions: Optional[list[dict]] = None
+    processing_time_ms: float = 0.0
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class StreamProcessor:
@@ -92,7 +103,7 @@ class StreamProcessor:
         Returns:
             Processing result or None if failed
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         try:
             session = await self._get_session()
@@ -102,14 +113,17 @@ class StreamProcessor:
                 if response.status == 200:
                     data = await response.json()
 
-                    processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+                    processing_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
 
                     result = ProcessingResult(
                         event_id=data["event_id"],
                         user_id=data["user_id"],
                         anomaly_score=data["anomaly_score"],
                         is_anomaly=data["is_anomaly"],
-                        explanation=data["explanation"],
+                        severity=data.get("severity"),
+                        explanation=data.get("explanation", ""),
+                        model_type=data.get("model_type"),
+                        feature_contributions=data.get("feature_contributions"),
                         processing_time_ms=processing_time
                     )
 
@@ -145,7 +159,7 @@ class StreamProcessor:
         Returns:
             List of processing results
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         try:
             session = await self._get_session()
@@ -154,7 +168,7 @@ class StreamProcessor:
             async with session.post(url, json={"events": events}, timeout=30) as response:
                 if response.status == 200:
                     data = await response.json()
-                    processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+                    processing_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
 
                     results = []
                     for score in data["scores"]:
@@ -163,7 +177,10 @@ class StreamProcessor:
                             user_id=score["user_id"],
                             anomaly_score=score["anomaly_score"],
                             is_anomaly=score["is_anomaly"],
-                            explanation=score["explanation"],
+                            severity=score.get("severity"),
+                            explanation=score.get("explanation", ""),
+                            model_type=score.get("model_type"),
+                            feature_contributions=score.get("feature_contributions"),
                             processing_time_ms=processing_time / len(events)
                         )
                         results.append(result)
@@ -203,12 +220,23 @@ class StreamProcessor:
         if not self._kafka_producer:
             return
 
+        top_features = []
+        if result.feature_contributions:
+            for fc in result.feature_contributions[:5]:
+                name = fc.get("feature_name")
+                contrib = fc.get("contribution")
+                if name is not None:
+                    top_features.append({"feature_name": name, "contribution": contrib})
+
         alert = {
             "event_id": result.event_id,
             "user_id": result.user_id,
             "anomaly_score": result.anomaly_score,
+            "severity": result.severity,
+            "model_type": result.model_type,
             "explanation": result.explanation,
-            "timestamp": result.timestamp.isoformat()
+            "top_features": top_features,
+            "timestamp": result.timestamp.isoformat(),
         }
 
         try:

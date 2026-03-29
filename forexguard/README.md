@@ -219,11 +219,29 @@ async for event in simulator.stream(max_events=1000):
 
 ### With Kafka
 
+Kafka flow is:
+
+`forex-events` topic → `streaming.kafka_worker` → `/score` API → `forex-alerts` topic
+
 ```bash
-# Start with Kafka profile
+# 1) Start Kafka (and optional UI) via docker compose profile
 docker-compose --profile kafka up -d
 
-# Events flow: forex-events topic -> processor -> forex-alerts topic
+# 2) Start the ForexGuard API (in another terminal)
+python -m api.main
+
+# 3) Start the Kafka worker (consumes events, publishes alerts)
+python -m streaming.kafka_worker
+
+# 4) (Optional) Publish simulated events into Kafka
+python -m streaming.kafka_producer --max-events 1000
+
+# Env overrides (optional)
+#   API_URL=http://localhost:8000
+#   KAFKA_BOOTSTRAP=localhost:9092
+#   KAFKA_INPUT_TOPIC=forex-events
+#   KAFKA_OUTPUT_TOPIC=forex-alerts
+#   KAFKA_GROUP_ID=forexguard-processor
 ```
 
 ## Deployment
@@ -273,10 +291,12 @@ docker-compose --profile kafka up -d
 | Type | Description | Key Features |
 |------|-------------|--------------|
 | **IP Switching** | Rapid changes between IPs/VPNs | `unique_ips_24h`, `ip_change_rate` |
+| **IP/Device Hub** | Many accounts share same IP/device | `ip_shared_users_24h`, `device_shared_users_24h`, `ip_hub_behavior` |
+| **Login Brute Force** | Failed login streaks / high failure rate | `consecutive_login_failures`, `failed_login_rate`, `login_bruteforce` |
+| **Bot-like Navigation** | Rapid portal navigation bursts | `page_view_count_24h`, `min_inter_event_time`, `rapid_navigation` |
 | **Trade Spikes** | Sudden volume increases | `lot_size_zscore`, `trade_count_24h` |
-| **Deposit/Withdrawal Abuse** | Money laundering patterns | `withdrawal_deposit_ratio`, `amount_zscore` |
-| **Session Hijacking** | Impossible concurrent sessions | `unique_devices_24h`, `min_inter_event_time` |
-| **Multi-Device Rapid** | Account sharing indicators | `device_change_rate`, `unique_devices_24h` |
+| **Deposit/Withdrawal Abuse** | Money laundering patterns | `withdrawal_deposit_ratio`, `amount_zscore`, `dormancy_withdrawal` |
+| **Session Hijacking** | Suspicious access switching | `unique_devices_24h`, `min_inter_event_time`, `rapid_device_switching` |
 
 ## Configuration
 
@@ -289,6 +309,10 @@ Environment variables:
 | `MODEL_PATH` | models/saved | Model storage path |
 | `ANOMALY_THRESHOLD` | 0.5 | Score threshold for alerts |
 | `KAFKA_BOOTSTRAP` | localhost:9092 | Kafka servers |
+| `KAFKA_INPUT_TOPIC` | forex-events | Kafka topic for raw events |
+| `KAFKA_OUTPUT_TOPIC` | forex-alerts | Kafka topic for alerts |
+| `KAFKA_GROUP_ID` | forexguard-processor | Kafka consumer group id |
+| `API_URL` | http://localhost:8000 | API base URL used by Kafka worker |
 
 ## Trade-offs & Design Decisions
 
@@ -379,3 +403,10 @@ MIT License - See LICENSE file for details.
 ---
 
 Built with FastAPI, PyTorch, scikit-learn, and SHAP.
+
+cd forexguard
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+python train.py
+uvicorn api.main:app --reload

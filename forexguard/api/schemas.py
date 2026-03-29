@@ -3,7 +3,7 @@ Pydantic Schemas for ForexGuard API
 Defines request/response models for the anomaly detection API.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from enum import Enum
 
@@ -12,13 +12,20 @@ from pydantic import BaseModel, Field
 
 class EventType(str, Enum):
     """Supported event types."""
+    # Client portal
     LOGIN = "login"
     LOGOUT = "logout"
+    PROFILE_UPDATE = "profile_update"
+    SUPPORT_TICKET = "support_ticket"
+    DOCUMENT_UPLOAD = "document_upload"
+    PAGE_VIEW = "page_view"
+    KYC_CHANGE = "kyc_change"
+    PASSWORD_CHANGE = "password_change"
+
+    # Trading / payments
     DEPOSIT = "deposit"
     WITHDRAWAL = "withdrawal"
     TRADE = "trade"
-    KYC_CHANGE = "kyc_change"
-    PASSWORD_CHANGE = "password_change"
 
 
 class SeverityLevel(str, Enum):
@@ -42,15 +49,29 @@ class EventInput(BaseModel):
     session_id: Optional[str] = Field(None, description="Session ID for login events")
     login_success: Optional[bool] = Field(None, description="Login success status")
     session_duration: Optional[int] = Field(None, description="Session duration in seconds")
+
+    # Client portal details
+    page: Optional[str] = Field(None, description="Page name/path for portal navigation events")
+    action: Optional[str] = Field(None, description="Portal action (e.g., click, submit)")
+    ticket_category: Optional[str] = Field(None, description="Support ticket category")
+    ticket_priority: Optional[str] = Field(None, description="Support ticket priority")
+    document_type: Optional[str] = Field(None, description="Uploaded document type")
+    upload_success: Optional[bool] = Field(None, description="Whether upload succeeded")
+
+    # Payments
     amount: Optional[float] = Field(None, description="Transaction amount")
     currency: Optional[str] = Field("USD", description="Currency code")
     payment_method: Optional[str] = Field(None, description="Payment method")
+
+    # Trading
     instrument: Optional[str] = Field(None, description="Trading instrument (e.g., EUR/USD)")
     lot_size: Optional[float] = Field(None, description="Trade lot size")
     direction: Optional[str] = Field(None, description="Trade direction (buy/sell)")
     margin_used: Optional[float] = Field(None, description="Margin used for trade")
     leverage: Optional[int] = Field(None, description="Leverage used")
-    field_changed: Optional[str] = Field(None, description="KYC field that changed")
+
+    # Account changes
+    field_changed: Optional[str] = Field(None, description="Account/KYC field that changed")
     change_method: Optional[str] = Field(None, description="Password change method")
 
     class Config:
@@ -93,7 +114,7 @@ class AnomalyScore(BaseModel):
         description="Feature contributions to anomaly score"
     )
     explanation: str = Field(..., description="Human-readable explanation")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Scoring timestamp")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Scoring timestamp")
 
     class Config:
         json_schema_extra = {
@@ -142,7 +163,7 @@ class Alert(BaseModel):
     title: str = Field(..., description="Alert title")
     description: str = Field(..., description="Detailed alert description")
     recommended_action: str = Field(..., description="Recommended action to take")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     acknowledged: bool = Field(default=False)
     acknowledged_by: Optional[str] = Field(None)
     acknowledged_at: Optional[datetime] = Field(None)

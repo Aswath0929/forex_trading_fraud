@@ -23,39 +23,66 @@ class AnomalyExplainer:
 
     # Feature description templates
     FEATURE_DESCRIPTIONS = {
-        "ip_change_count": "IP address changes ({value:.0f} changes)",
-        "ip_change_rate": "IP change rate ({value:.2f}/hour)",
-        "unique_ips": "Unique IPs used ({value:.0f} IPs)",
-        "ip_entropy": "IP diversity score ({value:.2f})",
-        "trade_volume_zscore": "Trade volume deviation ({value:.2f} std from mean)",
+        # Access / identity
+        "ip_change_rate": "IP change rate ({value:.2f})",
+        "unique_ips": "Unique IPs used ({value:.0f})",
+        "device_change_rate": "Device change rate ({value:.2f})",
+        "unique_devices": "Unique devices used ({value:.0f})",
+        "failed_login_rate": "Login failure rate ({value:.1%})",
+        "consecutive_login_failures": "Consecutive login failures ({value:.0f})",
+        "event_hour": "Event hour ({value:.0f})",
+        "is_night": "Night-time activity flag ({value:.0f})",
+
+        # Hub / shared entity signals
+        "ip_shared_users_24h": "Other users seen on same IP in 24h ({value:.0f})",
+        "device_shared_users_24h": "Other users seen on same device in 24h ({value:.0f})",
+
+        # Trading / payments
         "lot_size_zscore": "Lot size deviation ({value:.2f} std from mean)",
-        "trade_count_zscore": "Trade frequency deviation ({value:.2f} std from mean)",
-        "deposit_amount_zscore": "Deposit amount deviation ({value:.2f} std from mean)",
-        "withdrawal_amount_zscore": "Withdrawal amount deviation ({value:.2f} std from mean)",
-        "deposit_withdrawal_ratio": "Deposit/withdrawal ratio ({value:.2f})",
-        "transaction_velocity": "Transaction velocity ({value:.2f}/hour)",
+        "amount_zscore": "Amount deviation ({value:.2f} std from mean)",
+        "withdrawal_deposit_ratio": "Withdrawal/deposit ratio ({value:.2f})",
+
+        # Portal behavior
+        "page_view_count": "Portal page views in 24h ({value:.0f})",
+        "unique_pages": "Unique portal pages in 24h ({value:.0f})",
+        "support_ticket_count": "Support tickets in 24h ({value:.0f})",
+        "document_upload_count": "Document uploads in 24h ({value:.0f})",
+        "document_upload_fail_rate": "Document upload failure rate ({value:.1%})",
+        "avg_ticket_priority": "Average ticket priority ({value:.2f})",
+
+        # Session / temporal
         "session_duration_zscore": "Session duration deviation ({value:.2f} std from mean)",
-        "login_failure_rate": "Login failure rate ({value:.1%})",
-        "device_change_rate": "Device change rate ({value:.2f}/day)",
-        "unique_devices": "Unique devices used ({value:.0f} devices)",
         "time_since_last_event": "Time since last event ({value:.1f} seconds)",
-        "event_frequency": "Event frequency ({value:.2f}/hour)",
-        "margin_utilization": "Margin utilization ({value:.1%})",
-        "leverage_zscore": "Leverage deviation ({value:.2f} std from mean)"
     }
 
     # Rule-based explanation thresholds
     ANOMALY_RULES = {
-        "ip_change_count": {"threshold": 3, "msg": "unusual IP switching pattern"},
-        "ip_change_rate": {"threshold": 2.0, "msg": "rapid IP changes"},
-        "trade_volume_zscore": {"threshold": 2.0, "msg": "abnormal trade volume"},
+        # Access / identity
+        "rapid_ip_switching": {"threshold": 0.5, "msg": "unusual IP switching pattern"},
+        "rapid_device_switching": {"threshold": 0.5, "msg": "frequent device switching"},
+        "failed_login_rate": {"threshold": 0.3, "msg": "high login failure rate"},
+        "consecutive_login_failures": {"threshold": 3, "msg": "multiple consecutive failed logins"},
+        "login_bruteforce": {"threshold": 0.5, "msg": "possible brute-force login behavior"},
+        "is_night": {"threshold": 0.5, "msg": "unusual login/activity time (night hours)"},
+
+        # Hub / shared entity signals
+        "ip_shared_users_24h": {"threshold": 5, "msg": "many users sharing the same IP (IP hub)"},
+        "device_shared_users_24h": {"threshold": 3, "msg": "many users sharing the same device fingerprint"},
+        "ip_hub_behavior": {"threshold": 0.5, "msg": "IP hub behavior"},
+        "device_hub_behavior": {"threshold": 0.5, "msg": "device hub behavior"},
+
+        # Portal behavior
+        "rapid_navigation": {"threshold": 0.5, "msg": "bot-like rapid navigation"},
+        "page_diversity_spike": {"threshold": 0.5, "msg": "unusually diverse portal navigation"},
+        "document_upload_spike": {"threshold": 0.5, "msg": "document upload spike"},
+        "support_ticket_spike": {"threshold": 0.5, "msg": "support ticket spike"},
+        "account_change_rush": {"threshold": 0.5, "msg": "rapid account/profile changes"},
+
+        # Financial / trading
+        "amount_zscore": {"threshold": 2.0, "msg": "unusual transaction amount"},
         "lot_size_zscore": {"threshold": 2.5, "msg": "unusual lot sizes"},
-        "deposit_amount_zscore": {"threshold": 2.0, "msg": "unusual deposit amount"},
-        "withdrawal_amount_zscore": {"threshold": 2.0, "msg": "unusual withdrawal amount"},
-        "transaction_velocity": {"threshold": 5.0, "msg": "high transaction frequency"},
-        "device_change_rate": {"threshold": 3.0, "msg": "frequent device changes"},
-        "login_failure_rate": {"threshold": 0.3, "msg": "high login failure rate"},
-        "margin_utilization": {"threshold": 0.9, "msg": "high margin utilization"}
+        "withdrawal_deposit_ratio": {"threshold": 3.0, "msg": "withdrawal-heavy pattern"},
+        "dormancy_withdrawal": {"threshold": 0.5, "msg": "large withdrawal after dormancy"},
     }
 
     def __init__(self, model, feature_pipeline, use_shap: bool = True):
@@ -271,46 +298,64 @@ class RuleBasedExplainer:
     RULES = [
         {
             "name": "ip_switching",
-            "condition": lambda f: f.get("ip_change_count", 0) > 3,
+            "condition": lambda f: f.get("rapid_ip_switching", 0) == 1,
             "message": "unusual IP switching pattern",
-            "weight": 0.3
-        },
-        {
-            "name": "trade_spike",
-            "condition": lambda f: abs(f.get("trade_volume_zscore", 0)) > 2,
-            "message": "abnormal trade volume spike",
-            "weight": 0.25
-        },
-        {
-            "name": "deposit_anomaly",
-            "condition": lambda f: abs(f.get("deposit_amount_zscore", 0)) > 2,
-            "message": "unusual deposit amount",
-            "weight": 0.2
-        },
-        {
-            "name": "withdrawal_anomaly",
-            "condition": lambda f: abs(f.get("withdrawal_amount_zscore", 0)) > 2,
-            "message": "unusual withdrawal amount",
-            "weight": 0.2
+            "weight": 0.25,
         },
         {
             "name": "device_switching",
-            "condition": lambda f: f.get("device_change_rate", 0) > 3,
-            "message": "frequent device changes",
-            "weight": 0.15
+            "condition": lambda f: f.get("rapid_device_switching", 0) == 1,
+            "message": "frequent device switching",
+            "weight": 0.2,
+        },
+        {
+            "name": "login_bruteforce",
+            "condition": lambda f: f.get("login_bruteforce", 0) == 1,
+            "message": "possible brute-force login behavior",
+            "weight": 0.25,
+        },
+        {
+            "name": "ip_hub",
+            "condition": lambda f: f.get("ip_hub_behavior", 0) == 1,
+            "message": "many users sharing the same IP (IP hub)",
+            "weight": 0.2,
+        },
+        {
+            "name": "rapid_navigation",
+            "condition": lambda f: f.get("rapid_navigation", 0) == 1,
+            "message": "bot-like rapid navigation",
+            "weight": 0.15,
+        },
+        {
+            "name": "document_upload_spike",
+            "condition": lambda f: f.get("document_upload_spike", 0) == 1,
+            "message": "document upload spike",
+            "weight": 0.1,
         },
         {
             "name": "session_anomaly",
             "condition": lambda f: abs(f.get("session_duration_zscore", 0)) > 2,
             "message": "unusual session duration",
-            "weight": 0.1
+            "weight": 0.1,
         },
         {
-            "name": "high_margin",
-            "condition": lambda f: f.get("margin_utilization", 0) > 0.9,
-            "message": "high margin utilization",
-            "weight": 0.15
-        }
+            "name": "amount_anomaly",
+            "condition": lambda f: abs(f.get("amount_zscore", 0)) > 2,
+            "message": "unusual transaction amount",
+            "weight": 0.2,
+        },
+        {
+            "name": "lot_size_anomaly",
+            "condition": lambda f: abs(f.get("lot_size_zscore", 0)) > 2.5,
+            "message": "unusual lot sizes",
+            "weight": 0.2,
+        },
+        {
+            "name": "dormancy_withdrawal",
+            "condition": lambda f: f.get("dormancy_withdrawal", 0) == 1,
+            "message": "large withdrawal after dormancy",
+            "weight": 0.2,
+        },
     ]
 
     def explain(self, features: dict) -> tuple[float, list[str]]:

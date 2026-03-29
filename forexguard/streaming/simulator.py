@@ -6,7 +6,7 @@ Simulates real-time event streaming for testing and demonstration.
 import asyncio
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Callable, AsyncIterator
 from dataclasses import dataclass
 
@@ -72,7 +72,7 @@ class StreamSimulator:
 
     def generate_event(self) -> dict:
         """Generate a single event."""
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
 
         # Decide if this should be an anomaly
         is_anomaly = random.random() < self.config.anomaly_rate
@@ -95,7 +95,7 @@ class StreamSimulator:
         user = random.choice(self.anomalous_users if self.anomalous_users else self.users)
 
         for _ in range(self.config.burst_size):
-            timestamp = datetime.now()
+            timestamp = datetime.now(timezone.utc)
             if user.is_anomalous:
                 event = generate_anomalous_event(user, timestamp)
                 self.anomaly_count += 1

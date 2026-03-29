@@ -6,7 +6,7 @@ Handles model versioning, loading, and management.
 import os
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Union
 from loguru import logger
 
@@ -78,7 +78,7 @@ class ModelRegistry:
             raise ValueError(f"Unknown model type: {model_type}. Must be one of {list(MODEL_TYPES.keys())}")
 
         # Generate version
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         version = f"v_{timestamp}"
 
         # Create model directory
@@ -102,7 +102,7 @@ class ModelRegistry:
         self.metadata["models"][model_key]["versions"].append({
             "version": version,
             "path": str(model_path),
-            "created_at": datetime.now().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "description": description,
             "metrics": metrics or {}
         })

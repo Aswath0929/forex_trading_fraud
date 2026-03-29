@@ -6,7 +6,7 @@ Real-time anomaly detection API for forex brokerage fraud detection.
 import sys
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -185,7 +185,7 @@ async def score_event(
             severity=severity,
             feature_contributions=feature_contribs,
             explanation=explanation,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(timezone.utc)
         )
 
         # Generate alert in background if anomaly
@@ -260,7 +260,7 @@ async def score_batch(
                 severity=severity,
                 feature_contributions=feature_contribs,
                 explanation=explanation,
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             )
             scores.append(result)
 
@@ -342,7 +342,7 @@ async def list_models():
             model_id=model_id,
             model_type=m["type"],
             version=m["latest_version"] or "unknown",
-            created_at=datetime.fromisoformat(m["created_at"]) if m["created_at"] else datetime.utcnow(),
+            created_at=datetime.fromisoformat(m["created_at"]) if m["created_at"] else datetime.now(timezone.utc),
             metrics={},
             is_active=m["is_active"]
         ))

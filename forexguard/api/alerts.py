@@ -4,7 +4,7 @@ Generates human-readable alerts with severity levels and recommended actions.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from loguru import logger
@@ -157,7 +157,7 @@ class AlertGenerator:
             title=template["title"],
             description=template["description"].format(**desc_context),
             recommended_action=template["action"],
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
 
         self.alert_history.append(alert)
@@ -201,7 +201,7 @@ class AlertGenerator:
             if alert.alert_id == alert_id:
                 alert.acknowledged = True
                 alert.acknowledged_by = acknowledged_by
-                alert.acknowledged_at = datetime.utcnow()
+                alert.acknowledged_at = datetime.now(timezone.utc)
                 logger.info(f"Alert {alert_id} acknowledged by {acknowledged_by}")
                 return True
         return False
