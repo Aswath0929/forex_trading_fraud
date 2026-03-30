@@ -60,6 +60,13 @@ class IsolationForestDetector:
         self.feature_names: list[str] = []
         self.is_fitted = False
 
+        # Calibration stats (learned at fit time) for mapping raw scores -> 0..1 anomaly score
+        # IsolationForest.score_samples: lower = more anomalous
+        self.raw_score_mean: Optional[float] = None
+        self.raw_score_std: Optional[float] = None
+        self.raw_score_threshold: Optional[float] = None
+        self.calibration_scale: float = 5.0
+
     def fit(self, X: np.ndarray, feature_names: Optional[list[str]] = None):
         """
         Fit the model on training data.
@@ -86,7 +93,20 @@ class IsolationForestDetector:
         self.model.fit(X_scaled)
         self.is_fitted = True
 
-        logger.info("Isolation Forest training complete")
+        # Learn calibration stats from training distribution so that
+        # anomaly_score ~= 0.5 around the model's contamination cut.
+        raw = self.model.score_samples(X_scaled)
+        self.raw_score_mean = float(np.mean(raw))
+        self.raw_score_std = float(np.std(raw)) if float(np.std(raw)) > 0 else 1.0
+        self.raw_score_threshold = float(np.quantile(raw, self.contamination))
+
+        logger.info(
+            "Isolation Forest training complete | raw_mean={:.4f} raw_std={:.4f} raw_thresh(q={:.3f})={:.4f}",
+            self.raw_score_mean,
+            self.raw_score_std,
+            self.contamination,
+            self.raw_score_threshold,
+        )
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         """
@@ -135,14 +155,20 @@ class IsolationForestDetector:
         Returns:
             Array of probabilities where higher = more likely anomaly
         """
-        # Get raw scores (typically range from -0.5 to 0.5)
+        # Get raw scores: lower = more anomalous
         raw_scores = self.score_samples(X)
 
-        # Convert to probability-like score (0 to 1)
-        # More negative raw score = higher anomaly probability
-        # Using sigmoid-like transformation
-        proba = 1 / (1 + np.exp(10 * raw_scores))
+        # If we have calibration stats, map relative to the learned threshold.
+        # We want: raw == threshold -> 0.5, raw < threshold -> >0.5 (anomalous)
+        if self.raw_score_threshold is not None:
+            std = float(self.raw_score_std or 1.0)
+            z = (float(self.raw_score_threshold) - raw_scores) / (std + 1e-9)
+            proba = 1 / (1 + np.exp(-self.calibration_scale * z))
+            return proba
 
+        # Fallback (older models): monotonic mapping (may be poorly calibrated)
+        z = -raw_scores
+        proba = 1 / (1 + np.exp(-10 * z))
         return proba
 
     def get_feature_importances(self, X: np.ndarray) -> dict[str, np.ndarray]:
@@ -237,7 +263,11 @@ class IsolationForestDetector:
             "feature_names": self.feature_names,
             "contamination": self.contamination,
             "n_estimators": self.n_estimators,
-            "is_fitted": self.is_fitted
+            "is_fitted": self.is_fitted,
+            "raw_score_mean": self.raw_score_mean,
+            "raw_score_std": self.raw_score_std,
+            "raw_score_threshold": self.raw_score_threshold,
+            "calibration_scale": self.calibration_scale,
         }
 
         joblib.dump(model_data, path)
@@ -256,6 +286,11 @@ class IsolationForestDetector:
         detector.scaler = model_data["scaler"]
         detector.feature_names = model_data["feature_names"]
         detector.is_fitted = model_data["is_fitted"]
+
+        detector.raw_score_mean = model_data.get("raw_score_mean")
+        detector.raw_score_std = model_data.get("raw_score_std")
+        detector.raw_score_threshold = model_data.get("raw_score_threshold")
+        detector.calibration_scale = float(model_data.get("calibration_scale", detector.calibration_scale))
 
         logger.info(f"Model loaded from {path}")
         return detector

@@ -117,6 +117,83 @@ class AnomalyExplainer:
             logger.warning(f"Failed to initialize SHAP explainer: {e}")
             self.use_shap = False
 
+    def explain_shap(self, event: dict, top_k: int = 10) -> dict:
+        """Return SHAP (or rule-based fallback) attributions for a single event.
+
+        This is meant to be consumed by the UI (Swagger /docs).
+        """
+        feature_dict = self.feature_pipeline.transform_event(event, update_store=True)
+
+        import pandas as pd
+        df = pd.DataFrame([feature_dict])
+
+        expected = getattr(self.model, "feature_names", None) or None
+        X, feature_names = self.feature_pipeline.get_model_features(df, expected_features=expected)
+        x = X[0]
+
+        score = float(self.model.predict_proba(x.reshape(1, -1))[0])
+
+        # Default to rule-based output
+        base_value = None
+        method = "rule"
+        attributions: list[dict] = []
+
+        if self.use_shap and self.shap_explainer is not None:
+            try:
+                shap_values = self.shap_explainer.shap_values(x.reshape(1, -1))
+                if isinstance(shap_values, list):
+                    shap_values = shap_values[0]
+                shap_values = np.asarray(shap_values).reshape(-1)
+
+                ev = getattr(self.shap_explainer, "expected_value", None)
+                if ev is not None:
+                    ev_arr = np.asarray(ev).reshape(-1)
+                    base_value = float(ev_arr[0]) if ev_arr.size else None
+
+                method = "shap"
+                for name, val, sv in zip(feature_names, x.reshape(-1), shap_values):
+                    desc = self._get_feature_description(name, float(val))
+                    attributions.append({
+                        "feature_name": name,
+                        "value": float(val),
+                        "shap_value": float(sv),
+                        "abs_contribution": float(abs(sv)),
+                        "description": desc,
+                    })
+
+                attributions.sort(key=lambda d: d["abs_contribution"], reverse=True)
+                attributions = attributions[: max(1, int(top_k))]
+
+                return {
+                    "anomaly_score": score,
+                    "model_type": getattr(self.model, "__class__", type(self.model)).__name__,
+                    "method": method,
+                    "base_value": base_value,
+                    "top_features": attributions,
+                }
+
+            except Exception as e:
+                logger.warning(f"SHAP explanation failed: {e}")
+
+        # Rule-based fallback using existing contribution logic
+        contribs = self._get_rule_contributions(x, feature_names)
+        for name, val, contrib, desc in contribs[: max(1, int(top_k))]:
+            attributions.append({
+                "feature_name": name,
+                "value": float(val),
+                "shap_value": None,
+                "abs_contribution": float(contrib),
+                "description": desc,
+            })
+
+        return {
+            "anomaly_score": score,
+            "model_type": getattr(self.model, "__class__", type(self.model)).__name__,
+            "method": method,
+            "base_value": base_value,
+            "top_features": attributions,
+        }
+
     def explain(self, event: dict) -> tuple[float, list[tuple], str]:
         """
         Generate anomaly score with explanation.
@@ -133,7 +210,9 @@ class AnomalyExplainer:
         # Convert to DataFrame and get model features
         import pandas as pd
         df = pd.DataFrame([feature_dict])
-        features, feature_names = self.feature_pipeline.get_model_features(df)
+
+        expected = getattr(self.model, "feature_names", None) or None
+        features, feature_names = self.feature_pipeline.get_model_features(df, expected_features=expected)
         features = features[0]  # Get first row as 1D array
 
         # Get anomaly score (predict_proba returns array, get single value)

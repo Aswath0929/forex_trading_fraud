@@ -100,6 +100,32 @@ class FeatureContribution(BaseModel):
     description: str = Field(..., description="Human-readable explanation")
 
 
+class ShapFeatureContribution(BaseModel):
+    """Feature attribution returned by /explain/shap.
+
+    shap_value is signed (positive/negative contribution) when SHAP is available.
+    abs_contribution is used for sorting.
+    """
+
+    feature_name: str = Field(..., description="Name of the feature")
+    value: float = Field(..., description="Feature value")
+    shap_value: Optional[float] = Field(None, description="Signed SHAP value (if available)")
+    abs_contribution: float = Field(..., description="Absolute contribution used for ranking")
+    description: str = Field(..., description="Human-readable explanation")
+
+
+class ShapExplanation(BaseModel):
+    """Per-event SHAP explanation output for the UI (Swagger /docs)."""
+
+    event_id: str
+    user_id: str
+    anomaly_score: float = Field(..., ge=0, le=1)
+    model_type: str
+    method: str = Field(..., description="'shap' if SHAP computed, otherwise 'rule'")
+    base_value: Optional[float] = Field(None, description="SHAP base value / expected value (if available)")
+    top_features: list[ShapFeatureContribution] = Field(default_factory=list)
+
+
 class AnomalyScore(BaseModel):
     """Anomaly score response."""
     event_id: str = Field(..., description="Event identifier")

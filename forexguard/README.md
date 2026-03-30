@@ -94,6 +94,23 @@ curl -X POST http://localhost:8000/score \
     "margin_used": 750.0,
     "leverage": 100
   }'
+
+# Explain the same event (shows in Swagger UI at /docs too)
+curl -X POST "http://localhost:8000/explain/shap?top_k=10" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event_id": "evt_001",
+    "user_id": "USER_00001",
+    "timestamp": "2024-01-15T10:30:00Z",
+    "event_type": "trade",
+    "ip_address": "192.168.1.100",
+    "device": "Windows Desktop",
+    "instrument": "EUR/USD",
+    "lot_size": 1.5,
+    "direction": "buy",
+    "margin_used": 750.0,
+    "leverage": 100
+  }'
 ```
 
 ## API Reference
@@ -104,6 +121,7 @@ curl -X POST http://localhost:8000/score \
 |----------|--------|-------------|
 | `/health` | GET | Health check with model status |
 | `/score` | POST | Score single event for anomalies |
+| `/explain/shap` | POST | Top feature attributions (SHAP if available, else rule-based) |
 | `/score/batch` | POST | Score multiple events |
 | `/alerts` | GET | Get recent alerts |
 | `/alerts/{id}/acknowledge` | POST | Acknowledge an alert |
@@ -307,7 +325,8 @@ Environment variables:
 | `PORT` | 8000 | API server port |
 | `LOG_LEVEL` | INFO | Logging level |
 | `MODEL_PATH` | models/saved | Model storage path |
-| `ANOMALY_THRESHOLD` | 0.5 | Score threshold for alerts |
+| `ANOMALY_THRESHOLD` | 0.5 | Score threshold for anomaly flagging + alerts |
+| `ALERT_THRESHOLD` | 0.5 | (Stream processor) Threshold for publishing alerts (if used) |
 | `KAFKA_BOOTSTRAP` | localhost:9092 | Kafka servers |
 | `KAFKA_INPUT_TOPIC` | forex-events | Kafka topic for raw events |
 | `KAFKA_OUTPUT_TOPIC` | forex-alerts | Kafka topic for alerts |

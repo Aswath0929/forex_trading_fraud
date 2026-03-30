@@ -41,7 +41,9 @@ class FeaturePipeline:
         else:
             login_success = 1
 
-        ticket_priority = (event.get("ticket_priority") or "").lower()
+        # pandas may coerce missing strings to NaN (float). Guard before calling .lower().
+        ticket_priority_raw = event.get("ticket_priority")
+        ticket_priority = ticket_priority_raw.lower() if isinstance(ticket_priority_raw, str) else ""
         ticket_priority_score = {"low": 0, "medium": 1, "high": 2, "urgent": 3}.get(ticket_priority, 0)
 
         features = {
@@ -428,8 +430,22 @@ class FeaturePipeline:
 
         return df
 
-    def get_model_features(self, df: pd.DataFrame) -> np.ndarray:
-        """Extract numerical features suitable for ML models."""
+    def get_model_features(
+        self,
+        df: pd.DataFrame,
+        expected_features: Optional[list[str]] = None,
+    ) -> tuple[np.ndarray, list[str]]:
+        """Extract numerical features suitable for ML models.
+
+        If expected_features is provided (e.g., from a trained model), the returned
+        matrix will follow that exact column order and will fill missing columns
+        with 0. This prevents inference-time feature-count mismatches.
+        """
+        if expected_features:
+            cols = list(expected_features)
+            X = df.reindex(columns=cols, fill_value=0).fillna(0).values
+            return X, cols
+
         feature_cols = [
             # Base features
             "amount", "lot_size", "margin_used", "leverage", "session_duration",
@@ -477,11 +493,8 @@ class FeaturePipeline:
             "ip_hub_behavior", "device_hub_behavior",
         ]
 
-        # Filter to columns that exist
         available_cols = [c for c in feature_cols if c in df.columns]
-
         X = df[available_cols].fillna(0).values
-
         return X, available_cols
 
     def reset(self):

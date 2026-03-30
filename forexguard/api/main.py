@@ -3,6 +3,7 @@ FastAPI Application for ForexGuard
 Real-time anomaly detection API for forex brokerage fraud detection.
 """
 
+import os
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -26,13 +27,39 @@ from api.schemas import (
     SeverityLevel,
     HealthResponse,
     ModelInfo,
-    FeatureContribution
+    FeatureContribution,
+    ShapExplanation,
+    ShapFeatureContribution,
 )
 from api.alerts import AlertGenerator, get_alert_generator
 from features.feature_pipeline import FeaturePipeline
 from features.feature_store import GlobalFeatureStore
 from models.model_registry import get_registry, ModelRegistry
 from explainability.explainer import AnomalyExplainer
+
+
+def _parse_model_id(model_id: str) -> tuple[str, str, str]:
+    """Parse model_id of the form: <model_type>_<model_name>_<version>.
+
+    Note: model_type itself contains underscores and version is like v_YYYYMMDD_HHMMSS,
+    so we parse from the right using the "_v_" marker and then match known types.
+    """
+    if "_v_" not in model_id:
+        raise ValueError("Invalid model_id format")
+
+    left, version_suffix = model_id.rsplit("_v_", 1)
+    version = f"v_{version_suffix}"
+
+    known_types = ["lstm_autoencoder", "isolation_forest"]
+    for t in sorted(known_types, key=len, reverse=True):
+        prefix = t + "_"
+        if left.startswith(prefix):
+            name = left[len(prefix):]
+            if not name:
+                raise ValueError("Invalid model_id (missing model name)")
+            return t, name, version
+
+    raise ValueError("Invalid model_id (unknown model type)")
 
 
 # Global instances
@@ -54,7 +81,8 @@ async def lifespan(app: FastAPI):
     feature_pipeline = FeaturePipeline()
     feature_store = GlobalFeatureStore()
     model_registry = get_registry("models/saved")
-    alert_generator = get_alert_generator(threshold=0.5)
+    threshold = float(os.getenv("ANOMALY_THRESHOLD", "0.5"))
+    alert_generator = get_alert_generator(threshold=threshold)
 
     # Try to load model
     try:
@@ -160,7 +188,7 @@ async def score_event(
         score, contributions, explanation = explainer.explain(event_dict)
 
         # Determine if anomaly
-        threshold = 0.5
+        threshold = float(os.getenv("ANOMALY_THRESHOLD", "0.5"))
         is_anomaly = score >= threshold
         severity = _score_to_severity(score)
 
@@ -205,6 +233,36 @@ async def score_event(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/explain/shap", response_model=ShapExplanation, tags=["Explainability"])
+async def explain_shap(
+    event: EventInput,
+    top_k: int = Query(10, ge=1, le=50, description="Number of top contributing features to return")
+):
+    """Explain a single event using SHAP if available (otherwise rule-based fallback)."""
+    if explainer is None:
+        raise HTTPException(status_code=503, detail="Model not loaded. Please train a model first.")
+
+    try:
+        event_dict = event.model_dump()
+        payload = explainer.explain_shap(event_dict, top_k=top_k)
+
+        top_features = [ShapFeatureContribution(**d) for d in payload.get("top_features", [])]
+
+        return ShapExplanation(
+            event_id=event.event_id,
+            user_id=event.user_id,
+            anomaly_score=round(float(payload.get("anomaly_score", 0.0)), 4),
+            model_type=(model_registry.get_active_model_id() or "unknown") if model_registry else "unknown",
+            method=str(payload.get("method", "rule")),
+            base_value=payload.get("base_value"),
+            top_features=top_features,
+        )
+
+    except Exception as e:
+        logger.error(f"Error generating SHAP explanation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/score/batch", response_model=BatchAnomalyScore, tags=["Scoring"])
 async def score_batch(
     batch: BatchEventInput,
@@ -233,7 +291,7 @@ async def score_batch(
             # Get anomaly score with explanation
             score, contributions, explanation = explainer.explain(event_dict)
 
-            threshold = 0.5
+            threshold = float(os.getenv("ANOMALY_THRESHOLD", "0.5"))
             is_anomaly = score >= threshold
             severity = _score_to_severity(score)
 
@@ -358,8 +416,9 @@ async def activate_model(model_id: str):
         raise HTTPException(status_code=503, detail="Model registry not initialized")
 
     try:
-        model_registry.set_active(model_id)
-        model = model_registry.load(model_id)
+        model_type, model_name, version = _parse_model_id(model_id)
+        model_registry.set_active(model_type, model_name, version)
+        model = model_registry.load(model_type, model_name, version)
         explainer = AnomalyExplainer(model, feature_pipeline)
 
         return {"status": "activated", "model_id": model_id}
